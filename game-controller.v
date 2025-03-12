@@ -54,6 +54,8 @@ module game_controller(
     
     // Player input tracking
     reg [15:0] player_switches;           // Previous switch state for edge detection
+    reg [15:0] switch_toggled;            // Tracks which switches have been toggled
+    reg [15:0] expected_toggle;           // Expected toggle based on sequence
     reg [3:0] player_direction;           // Previous direction for edge detection
     reg player_input_required;            // Flag indicating if player needs to input
     reg [1:0] input_type;                 // 0: none, 1: switches, 2: joystick
@@ -119,6 +121,8 @@ module game_controller(
             max_says_count <= 1; // Default to 1 time
             says_displayed <= 0;
             player_switches <= 0;
+            switch_toggled <= 0;
+            expected_toggle <= 0;
             player_direction <= 0;
             player_input_required <= 0;
             input_type <= 0;
@@ -164,61 +168,59 @@ module game_controller(
                     says_count <= 0;
                     says_displayed <= 0;
                     player_input_required <= 0;
+                    player_switches <= switches; // Initialize with current switch state
+                    switch_toggled <= 0;
+                    expected_toggle <= 0;
                     
-                    // Determine how many times to show "SAYS" (odd number 1-9)
-                    max_says_count <= ((random_value[3:0] % 5) * 2) + 1; // 1,3,5,7,9
+                    // Determine how many times to show "SAYS"
+                    max_says_count <= (random_value[3:0] % 9) + 1; // 1 to 9
+                    says_times_odd <= (says_count % 2 == 1); // whether odd
+
+                    // determine LED sequence
+                    generate_new_sequence(current_round);
                     
                     // Move to sequence display state
                     game_state <= STATE_SHOW_SEQUENCE;
                 end
                 
                 STATE_SHOW_SEQUENCE: begin
-                    // Handle showing "SAYS" and the sequence
+                    // show "SAYS"
                     if (!says_displayed) begin
                         // Show "SAYS" on seven segment display
                         says_showing <= 1;
                         display_value <= 32'h53415953; // "SAYS" in ASCII
                         
-                        // Count the number of times "SAYS" has been shown
                         if (player_clk && !player_clk_prev) begin
                             says_count <= says_count + 1;
+                            // we're done saying SAYS
                             if (says_count >= max_says_count) begin
                                 says_displayed <= 1;
                                 says_sequence_complete <= 1;
-                                says_times_odd <= (says_count % 2 == 1);
                                 says_showing <= 0;
                                 display_value <= 0;
                                 sequence_position <= 0;
                             end
                         end
                     end else begin
-                        // Show the sequence on LEDs and seven segment
+                        // show LED sequence and seven segment
                         says_showing <= 0;
-                        
                         if (player_clk && !player_clk_prev) begin
+                            // Display current step in sequence
                             if (sequence_position < sequence_length) begin
-                                // Display current step in sequence
-                                if (sequence_position % 2 == 0) begin
-                                    // Even positions: show the pattern
-                                    if (input_type[sequence_position] == 1) begin
-                                        // Show LED pattern
-                                        current_leds <= led_sequence[sequence_position];
-                                        display_value <= 0;
-                                    end else begin
-                                        // Show direction on display
-                                        current_leds <= 0;
-                                        case (dir_sequence[sequence_position])
-                                            DIR_UP: display_value <= 32'h00550000; // "U"
-                                            DIR_DOWN: display_value <= 32'h00440000; // "D"
-                                            DIR_LEFT: display_value <= 32'h004C0000; // "L"
-                                            DIR_RIGHT: display_value <= 32'h00520000; // "R"
-                                            default: display_value <= 0;
-                                        endcase
-                                    end
-                                end else begin
-                                    // Odd positions: clear display between steps
-                                    current_leds <= 0;
+                                // display LED
+                                if (input_type[sequence_position] == 1) begin
+                                    current_leds <= led_sequence[sequence_position];
                                     display_value <= 0;
+                                end else begin 
+                                    // display direction on seven segment display
+                                    current_leds <= 0;
+                                    case (dir_sequence[sequence_position])
+                                        DIR_UP: display_value <= 32'h00550000; // "U"
+                                        DIR_DOWN: display_value <= 32'h00440000; // "D"
+                                        DIR_LEFT: display_value <= 32'h004C0000; // "L"
+                                        DIR_RIGHT: display_value <= 32'h00520000; // "R"
+                                        default: display_value <= 0;
+                                    endcase
                                 end
                                 sequence_position <= sequence_position + 1;
                             end else begin
@@ -226,16 +228,18 @@ module game_controller(
                                 current_leds <= 0;
                                 display_value <= current_round;
                                 sequence_complete <= 1;
-                                game_state <= STATE_PLAYER_INPUT;
+                                player_switches <= switches; // Initialize with current switch state
                                 sequence_position <= 0;
                                 player_input_required <= 1;
+                                switch_toggled <= 0;
+                                expected_toggle <= 0;
+                                game_state <= STATE_PLAYER_INPUT;
                             end
                         end
                     end
                 end
                 
                 STATE_PLAYER_INPUT: begin
-                    // Handle player input
                     if (player_input_required) begin
                         // Check if player tried to input before "SAYS" appeared or when it appeared even times
                         if (!says_sequence_complete || (says_sequence_complete && !says_times_odd)) begin
@@ -245,25 +249,30 @@ module game_controller(
                                 game_state <= STATE_GAME_OVER;
                             end
                         end else begin
-                            // Process player input at correct time
-                            input_valid <= 1;
                             
-                            // Check if current sequence step is switch or joystick
+                            input_valid <= 1;
+                            // if sequence is switches (1)
                             if (input_type[sequence_position] == 1) begin
-                                // Check switch input
                                 if (switches != player_switches) begin
+                                    // Detect which switches were toggled
+                                    switch_toggled <= (switches ^ player_switches);
                                     player_switches <= switches;
-                                    if (switches == led_sequence[sequence_position]) begin
+                                    // expected toggle based on LED sequence
+                                    expected_toggle <= led_sequence[sequence_position];
+                                    
+                                    // Check if correct switches were toggled
+                                    if ((switch_toggled & expected_toggle) == expected_toggle) begin
+                                        // Player toggled all required switches for this step
                                         input_correct <= 1;
                                         sequence_position <= sequence_position + 1;
-                                    end else begin
+                                        switch_toggled <= 0;
+                                    end else begin // incorrect switches were toggled
                                         input_correct <= 0;
                                         game_over <= 1;
                                         game_state <= STATE_GAME_OVER;
                                     end
                                 end
-                            end else if (input_type[sequence_position] == 2) begin
-                                // Check joystick input
+                            end else begin // check joystick input
                                 if (joystick_direction != player_direction && joystick_direction != DIR_NONE) begin
                                     player_direction <= joystick_direction;
                                     if (joystick_direction == dir_sequence[sequence_position]) begin
@@ -277,7 +286,7 @@ module game_controller(
                                 end
                             end
                             
-                            // Check if player completed the sequence correctly
+                            // check if player completed the sequence correctly
                             if (sequence_position >= sequence_length) begin
                                 // Player successfully completed the sequence
                                 if (current_round < MAX_ROUND) begin
@@ -286,16 +295,6 @@ module game_controller(
                                         highest_round <= current_round + 1;
                                     end
                                 end
-                                
-                                // Generate new sequence if needed
-                                if (current_round % 3 == 0) begin
-                                    // Every 3 rounds, generate a completely new sequence
-                                    generate_new_sequence(current_round + 1);
-                                end else begin
-                                    // Otherwise, extend the existing sequence
-                                    extend_sequence();
-                                end
-                                
                                 // Return to init state to start next round
                                 game_state <= STATE_INIT;
                             end
@@ -330,64 +329,43 @@ module game_controller(
     task generate_new_sequence;
         input [2:0] round;
         integer i;
+        reg [31:0] temp_random;
         begin
             sequence_length <= round;
-            for (i = 0; i < MAX_SEQUENCE_LENGTH; i = i + 1) begin
-                // Generate random LED and direction sequences
-                // For early rounds (1-3), use either all LEDs or all directions
+            temp_random = random_value;
+            
+            for (i = 0; i < sequence_length; i = i + 1) begin
+                // Use temp_random for each step and then update it
                 if (round <= 3) begin
-                    if (random_value[31] == 1) begin
+                    if (temp_random[31] == 1) begin
                         // LED sequence (switches)
                         input_type[i] <= 1;
-                        led_sequence[i] <= 16'h0001 << (random_value[3:0] % 16); // One hot LED
+                        led_sequence[i] <= 16'h0001 << (temp_random[3:0] % 16); // One hot LED
                         dir_sequence[i] <= DIR_NONE;
                     end else begin
                         // Direction sequence (joystick)
                         input_type[i] <= 2;
                         led_sequence[i] <= 16'h0000;
-                        dir_sequence[i] <= (random_value[1:0] % 4) + 1; // 1-4 for U/D/L/R
+                        dir_sequence[i] <= (temp_random[1:0] % 4) + 1; // 1-4 for U/D/L/R
                     end
                 end else begin
                     // For later rounds, mix LED and direction inputs
                     if (i % 2 == 0) begin
                         // LED sequence (switches)
                         input_type[i] <= 1;
-                        led_sequence[i] <= 16'h0001 << (random_value[3:0] % 16); // One hot LED
+                        led_sequence[i] <= 16'h0001 << (temp_random[3:0] % 16); // One hot LED
                         dir_sequence[i] <= DIR_NONE;
                     end else begin
                         // Direction sequence (joystick)
                         input_type[i] <= 2;
                         led_sequence[i] <= 16'h0000;
-                        dir_sequence[i] <= (random_value[1:0] % 4) + 1; // 1-4 for U/D/L/R
+                        dir_sequence[i] <= (temp_random[1:0] % 4) + 1; // 1-4 for U/D/L/R
                     end
                 end
                 
-                // Shift random value for next iteration
-                random_value <= {random_value[30:0], random_value[31] ^ random_value[21] ^ random_value[1] ^ random_value[0]};
+                // Update temp_random for next step
+                temp_random = {temp_random[30:0], temp_random[31] ^ temp_random[21] ^ temp_random[1] ^ temp_random[0]};
             end
-        end
-    endtask
-    
-    // Task to extend an existing sequence
-    task extend_sequence;
-        begin
-            sequence_length <= sequence_length + 1;
-            
-            // Add a new random step
-            if (random_value[31] == 1) begin
-                // LED sequence (switches)
-                input_type[sequence_length] <= 1;
-                led_sequence[sequence_length] <= 16'h0001 << (random_value[3:0] % 16); // One hot LED
-                dir_sequence[sequence_length] <= DIR_NONE;
-            end else begin
-                // Direction sequence (joystick)
-                input_type[sequence_length] <= 2;
-                led_sequence[sequence_length] <= 16'h0000;
-                dir_sequence[sequence_length] <= (random_value[1:0] % 4) + 1; // 1-4 for U/D/L/R
-            end
-            
-            // Shift random value for next use
-            random_value <= {random_value[30:0], random_value[31] ^ random_value[21] ^ random_value[1] ^ random_value[0]};
         end
     endtask
 
