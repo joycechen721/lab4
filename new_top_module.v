@@ -3,10 +3,8 @@ module simon_says_top(
     input reset,            // Reset button
     input select,           // Mode select button
     input [15:0] switches,  // 16 switches for user input
-    input JA1,              // PMOD JA pin 1 - MISO (Master In Slave Out)
-    output JA2,             // PMOD JA pin 2 - MOSI (Master Out Slave In)
-    output JA3,             // PMOD JA pin 3 - SCLK (Serial Clock)
-    output JA4,             // PMOD JA pin 4 - SS (Slave Select)
+    input [3:0] rows,   // Pmod JB pins 10 to 7
+    output [3:0] cols,  // Pmod JB pins 4 to 1
     output [15:0] leds,     // 16 LEDs for sequence display
     output [6:0] seg,       // Seven segment display segments
     output [3:0] an         // Seven segment display anodes
@@ -18,10 +16,10 @@ module simon_says_top(
     wire [15:0] current_leds;
     wire [2:0] current_round;
     wire [2:0] highest_round;
-    wire [3:0] joystick_direction; // 0: none, 1: up, 2: down, 3: left, 4: right
-    wire [7:0] joystick_x, joystick_y;
+    wire [3:0] keypad_value;      // Value from keypad (0-F)
+    wire keypad_valid;            // Signal indicating valid keypad press
     wire [31:0] display_value;
-    wire [1:0] game_state; // 0: waiting, 1: showing sequence, 2: player input, 3: game over
+    wire [1:0] game_state;        // 0: waiting, 1: showing sequence, 2: player input, 3: game over
     wire says_showing;
     wire says_sequence_complete;
     wire says_times_odd;
@@ -29,11 +27,21 @@ module simon_says_top(
     wire input_valid;
     wire input_correct;
     wire game_over;
-    wire display_mode; // 0: game mode, 1: score mode
+    wire display_mode;           // 0: game mode, 1: score mode
+    
+    // Debug signals
+    wire [15:0] debug_switch_toggled;
+    wire [15:0] debug_expected_toggle;
+    wire [15:0] debug_led_sequence_current;
+    wire [15:0] debug_switches;
+    wire [15:0] debug_player_switches;
+    wire [5:0]  debug_sequence_position;
     
     // Clock divider for generating slower clocks
     wire clk_1Hz, clk_2Hz, clk_3Hz, clk_10Hz;
     wire player_clk; // Clock rate increases with level
+
+    wire [3:0] w_dec;
     
     // Module instantiations
     clock_divider clock_div (
@@ -45,25 +53,12 @@ module simon_says_top(
         .clk_10Hz(clk_10Hz)
     );
     
-    // SPI controller for joystick
-    spi_controller joystick_spi (
+    // Keypad controller for 4x4 matrix keypad
+    keypad_controller keypad_ctrl (
         .clk(clk),
-        .reset(reset),
-        .miso(JA1),         // Master In Slave Out
-        .mosi(JA2),         // Master Out Slave In
-        .sclk(JA3),         // Serial Clock
-        .ss(JA4),           // Slave Select
-        .x_pos(joystick_x), // X position (0-255)
-        .y_pos(joystick_y)  // Y position (0-255)
-    );
-    
-    // Joystick direction detector
-    joystick_direction_detector joy_dir (
-        .clk(clk),
-        .reset(reset),
-        .x_pos(joystick_x),
-        .y_pos(joystick_y),
-        .direction(joystick_direction)
+        .row(rows),
+		.col(cols),
+        .dec_out(w_dec)
     );
     
     // Game controller
@@ -72,7 +67,7 @@ module simon_says_top(
         .reset(reset),
         .select(select),
         .switches(switches),
-        .joystick_direction(joystick_direction),
+        .keypad_value(w_dec),
         .clk_1Hz(clk_1Hz),
         .clk_2Hz(clk_2Hz),
         .clk_3Hz(clk_3Hz),
@@ -92,7 +87,15 @@ module simon_says_top(
         .input_valid(input_valid),
         .input_correct(input_correct),
         .game_over(game_over),
-        .display_mode(display_mode)
+        .display_mode(display_mode),
+        
+        // Connect debug outputs
+        .debug_switch_toggled(debug_switch_toggled),
+        .debug_expected_toggle(debug_expected_toggle),
+        .debug_led_sequence_current(debug_led_sequence_current),
+        .debug_switches(debug_switches),
+        .debug_player_switches(debug_player_switches),
+        .debug_sequence_position(debug_sequence_position)
     );
     
     // Seven segment display controller

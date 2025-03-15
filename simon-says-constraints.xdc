@@ -106,13 +106,28 @@ set_property IOSTANDARD LVCMOS33 [get_ports {an[2]}]
 set_property PACKAGE_PIN W4 [get_ports {an[3]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {an[3]}]
 
-## Pmod Header JA for Joystick
-# These are the top row pins (1-4) of Pmod JA
-set_property PACKAGE_PIN J1 [get_ports JA1]
-set_property IOSTANDARD LVCMOS33 [get_ports JA1]
-set_property PACKAGE_PIN L2 [get_ports JA2]
-set_property IOSTANDARD LVCMOS33 [get_ports JA2]
-set_property PACKAGE_PIN J2 [get_ports JA3]
-set_property IOSTANDARD LVCMOS33 [get_ports JA3]
-set_property PACKAGE_PIN G2 [get_ports JA4]
-set_property IOSTANDARD LVCMOS33 [get_ports JA4]
+##Pmod Header JB
+##Sch name = JB1
+set_property PACKAGE_PIN A14 	 [get_ports {cols[0]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {cols[0]}]
+##Sch name = JB2                            
+set_property PACKAGE_PIN A16 	 [get_ports {cols[1]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {cols[1]}]
+##Sch name = JB3                            
+set_property PACKAGE_PIN B15 	 [get_ports {cols[2]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {cols[2]}]
+##Sch name = JB4                             
+set_property PACKAGE_PIN B16 	 [get_ports {cols[3]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {cols[3]}]
+##Sch name = JB7
+set_property PACKAGE_PIN A15 	 [get_ports {rows[0]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {rows[0]}]
+##Sch name = JB8                            
+set_property PACKAGE_PIN A17 	 [get_ports {rows[1]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {rows[1]}]
+##Sch name = JB9                             
+set_property PACKAGE_PIN C15 	 [get_ports {rows[2]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {rows[2]}]
+##Sch name = JB10                             
+set_property PACKAGE_PIN C16 	 [get_ports {rows[3]}]					
+set_property IOSTANDARD LVCMOS33 [get_ports {rows[3]}]
